@@ -1,0 +1,587 @@
+```react
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  LayoutDashboard, 
+  Package, 
+  ArrowDownLeft, 
+  ArrowUpRight, 
+  FolderTree, 
+  FileText, 
+  Bell, 
+  UserCheck, 
+  Plus, 
+  Search, 
+  Edit, 
+  Trash2, 
+  Eye, 
+  Download, 
+  Printer, 
+  CheckCircle, 
+  AlertTriangle, 
+  Menu, 
+  X, 
+  Boxes,
+  Cloud,
+  CloudOff,
+  RefreshCw
+} from 'lucide-react';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer, 
+  PieChart, 
+  Pie, 
+  Cell
+} from 'recharts';
+
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  signInWithCustomToken, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  doc, 
+  setDoc, 
+  onSnapshot, 
+  addDoc, 
+  deleteDoc 
+} from 'firebase/firestore';
+
+// Inisialisasi Firebase Safe Configuration
+let firebaseApp = null;
+let auth = null;
+let db = null;
+
+try {
+  if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+    const firebaseConfig = JSON.parse(__firebase_config);
+    firebaseApp = initializeApp(firebaseConfig);
+    auth = getAuth(firebaseApp);
+    db = getFirestore(firebaseApp);
+  }
+} catch (e) {
+  console.warn('Firebase configuration not available or invalid. Running in local fallback mode.', e);
+}
+
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'inventaris-app-default';
+
+// Data Awal Kategori
+const INITIAL_CATEGORIES = [
+  { id: 'CAT-01', name: 'Elektronik & IT', description: 'Komputer, laptop, monitor, dan perangkat pendukung' },
+  { id: 'CAT-02', name: 'Peralatan Kantor', description: 'ATK, kertas, meja, kursi, dan aksesoris kantor' },
+  { id: 'CAT-03', name: 'Perkakas & Alat Kerja', description: 'Obeng, tang, bor, mesin, dan perlengkapan teknisi' },
+  { id: 'CAT-04', name: 'Suku Cadang', description: 'Komponen pengganti untuk pemeliharaan mesin' },
+  { id: 'CAT-05', name: 'Bahan Baku', description: 'Bahan mentah untuk proses produksi' }
+];
+
+// Data Awal Barang
+const INITIAL_ITEMS = [
+  {
+    id: 'BRG-1001',
+    code: 'BRG-1001',
+    name: 'Laptop Dell Latitude 3420',
+    category: 'Elektronik & IT',
+    brand: 'Dell',
+    stock: 15,
+    minStock: 5,
+    unit: 'Unit',
+    condition: 'Baik',
+    dateAdded: '2026-01-10'
+  },
+  {
+    id: 'BRG-1002',
+    code: 'BRG-1002',
+    name: 'Monitor LG 24 Inch IPS',
+    category: 'Elektronik & IT',
+    brand: 'LG',
+    stock: 4,
+    minStock: 5,
+    unit: 'Unit',
+    condition: 'Baik',
+    dateAdded: '2026-01-15'
+  },
+  {
+    id: 'BRG-1003',
+    code: 'BRG-1003',
+    name: 'Kertas HVS A4 80gsm (Box)',
+    category: 'Peralatan Kantor',
+    brand: 'PaperOne',
+    stock: 45,
+    minStock: 10,
+    unit: 'Box',
+    condition: 'Baik',
+    dateAdded: '2026-02-01'
+  },
+  {
+    id: 'BRG-1004',
+    code: 'BRG-1004',
+    name: 'Tinta Printer Canon Black GI-790',
+    category: 'Peralatan Kantor',
+    brand: 'Canon',
+    stock: 2,
+    minStock: 5,
+    unit: 'Botol',
+    condition: 'Baik',
+    dateAdded: '2026-02-10'
+  },
+  {
+    id: 'BRG-1005',
+    code: 'BRG-1005',
+    name: 'Mesin Bor Listrik Bosch GSB 550',
+    category: 'Perkakas & Alat Kerja',
+    brand: 'Bosch',
+    stock: 0,
+    minStock: 3,
+    unit: 'Unit',
+    condition: 'Perlu Perbaikan',
+    dateAdded: '2026-02-12'
+  }
+];
+
+// Data Riwayat Barang Masuk
+const INITIAL_IN_TRANSACTIONS = [
+  {
+    id: 'TRX-IN-20260301-01',
+    date: '2026-03-01',
+    itemCode: 'BRG-1001',
+    itemName: 'Laptop Dell Latitude 3420',
+    quantity: 5,
+    supplier: 'PT Teknologi Mandiri',
+    officer: 'Budi Santoso',
+    notes: 'Pengadaan barang operasional baru Q1'
+  }
+];
+
+// Data Riwayat Barang Keluar
+const INITIAL_OUT_TRANSACTIONS = [
+  {
+    id: 'TRX-OUT-20260302-01',
+    date: '2026-03-02',
+    itemCode: 'BRG-1001',
+    itemName: 'Laptop Dell Latitude 3420',
+    quantity: 2,
+    destination: 'Tim Software Engineer',
+    department: 'IT / Technology',
+    officer: 'Budi Santoso',
+    notes: 'Penyerahan laptop staf baru'
+  }
+];
+
+// Simulasi Peran Pengguna
+const USERS = {
+  ADMIN: { name: 'Rian Pratama', role: 'Admin', badge: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+  GUDANG: { name: 'Ahmad Gudang', role: 'Petugas Gudang', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+  MANAGEMENT: { name: 'Siti Rahma', role: 'Manajemen', badge: 'bg-amber-100 text-amber-800 border-amber-200' }
+};
+
+// Format Tanggal
+const formatDate = (dateString) => {
+  if (!dateString) return '-';
+  const options = { year: 'numeric', month: 'long', day: 'numeric' };
+  return new Date(dateString).toLocaleDateString('id-ID', options);
+};
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [currentUser, setCurrentUser] = useState(USERS.ADMIN);
+
+  // Core Data States
+  const [items, setItems] = useState(INITIAL_ITEMS);
+  const [categories, setCategories] = useState(INITIAL_CATEGORIES);
+  const [inTransactions, setInTransactions] = useState(INITIAL_IN_TRANSACTIONS);
+  const [outTransactions, setOutTransactions] = useState(INITIAL_OUT_TRANSACTIONS);
+
+  // Auth & Cloud state
+  const [user, setUser] = useState(null);
+  const [isCloudConnected, setIsCloudConnected] = useState(false);
+
+  // Feedback Toast
+  const [toast, setToast] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotificationMenu, setShowNotificationMenu] = useState(false);
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 3500);
+  };
+
+  // Firebase Authentication Setup
+  useEffect(() => {
+    if (!auth) return;
+
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) {
+        console.error("Firebase auth failed:", err);
+      }
+    };
+
+    initAuth();
+    const unsubscribe = onAuthStateChanged(auth, (usr) => {
+      setUser(usr);
+      if (usr) {
+        setIsCloudConnected(true);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Sync Items Firestore
+  useEffect(() => {
+    if (!user || !db) return;
+
+    const itemsRef = collection(db, 'artifacts', appId, 'public', 'data', 'items');
+    const unsubItems = onSnapshot(itemsRef, (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedItems = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setItems(loadedItems);
+      } else {
+        // Seed default items if empty
+        INITIAL_ITEMS.forEach(async (item) => {
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', item.id), item);
+        });
+      }
+    }, (error) => {
+      console.error("Firestore Items listener error:", error);
+    });
+
+    const catRef = collection(db, 'artifacts', appId, 'public', 'data', 'categories');
+    const unsubCat = onSnapshot(catRef, (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedCat = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setCategories(loadedCat);
+      } else {
+        INITIAL_CATEGORIES.forEach(async (cat) => {
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', cat.id), cat);
+        });
+      }
+    }, (error) => {
+      console.error("Firestore Categories listener error:", error);
+    });
+
+    const inRef = collection(db, 'artifacts', appId, 'public', 'data', 'in_transactions');
+    const unsubIn = onSnapshot(inRef, (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedIn = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setInTransactions(loadedIn);
+      }
+    }, (error) => {
+      console.error("Firestore In Transactions error:", error);
+    });
+
+    const outRef = collection(db, 'artifacts', appId, 'public', 'data', 'out_transactions');
+    const unsubOut = onSnapshot(outRef, (snapshot) => {
+      if (!snapshot.empty) {
+        const loadedOut = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
+        setOutTransactions(loadedOut);
+      }
+    }, (error) => {
+      console.error("Firestore Out Transactions error:", error);
+    });
+
+    return () => {
+      unsubItems();
+      unsubCat();
+      unsubIn();
+      unsubOut();
+    };
+  }, [user]);
+
+  // Helper Functions untuk DB Cloud / Memory Fallback
+  const saveItemToCloud = async (itemData) => {
+    if (user && db) {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', itemData.id), itemData);
+    } else {
+      setItems(prev => {
+        const exists = prev.some(i => i.id === itemData.id);
+        if (exists) return prev.map(i => i.id === itemData.id ? itemData : i);
+        return [itemData, ...prev];
+      });
+    }
+  };
+
+  const deleteItemFromCloud = async (id) => {
+    if (user && db) {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', id));
+    } else {
+      setItems(prev => prev.filter(i => i.id !== id));
+    }
+  };
+
+  const saveInTransactionToCloud = async (tx, updatedItem) => {
+    if (user && db) {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'in_transactions', tx.id), tx);
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', updatedItem.id), updatedItem);
+    } else {
+      setInTransactions(prev => [tx, ...prev]);
+      setItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+    }
+  };
+
+  const saveOutTransactionToCloud = async (tx, updatedItem) => {
+    if (user && db) {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'out_transactions', tx.id), tx);
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', updatedItem.id), updatedItem);
+    } else {
+      setOutTransactions(prev => [tx, ...prev]);
+      setItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+    }
+  };
+
+  const saveCategoryToCloud = async (catData) => {
+    if (user && db) {
+      await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', catData.id), catData);
+    } else {
+      setCategories(prev => [...prev, catData]);
+    }
+  };
+
+  // Status Stok Badge
+  const getItemStatus = (item) => {
+    if (item.stock <= 0) return { label: 'Habis', color: 'bg-rose-100 text-rose-800 border-rose-200', type: 'danger' };
+    if (item.stock <= item.minStock) return { label: 'Stok Menipis', color: 'bg-amber-100 text-amber-800 border-amber-200', type: 'warning' };
+    return { label: 'Tersedia', color: 'bg-emerald-100 text-emerald-800 border-emerald-200', type: 'success' };
+  };
+
+  // Re-calculate Notifications
+  useEffect(() => {
+    const alerts = [];
+    items.forEach(item => {
+      if (item.stock <= 0) {
+        alerts.push({
+          id: `alert-out-${item.id}`,
+          title: 'Stok Habis!',
+          message: `${item.name} (${item.code}) saat ini HABIS!`,
+          type: 'danger'
+        });
+      } else if (item.stock <= item.minStock) {
+        alerts.push({
+          id: `alert-low-${item.id}`,
+          title: 'Stok Menipis',
+          message: `${item.name} sisa ${item.stock} ${item.unit} (Di bawah min. ${item.minStock})`,
+          type: 'warning'
+        });
+      }
+    });
+
+    setNotifications(alerts);
+  }, [items]);
+
+  const metrics = useMemo(() => {
+    const totalTypes = items.length;
+    const totalStock = items.reduce((acc, item) => acc + Number(item.stock), 0);
+    const lowStockCount = items.filter(item => item.stock > 0 && item.stock <= item.minStock).length;
+    const outOfStockCount = items.filter(item => item.stock <= 0).length;
+    
+    const inThisMonth = inTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
+    const outThisMonth = outTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
+
+    return {
+      totalTypes,
+      totalStock,
+      lowStockCount: lowStockCount + outOfStockCount,
+      outOfStockCount,
+      inThisMonth,
+      outThisMonth
+    };
+  }, [items, inTransactions, outTransactions]);
+
+  // Chart Data
+  const categoryChartData = useMemo(() => {
+    const map = {};
+    items.forEach(item => {
+      map[item.category] = (map[item.category] || 0) + Number(item.stock);
+    });
+    return Object.keys(map).map(cat => ({ name: cat, total: map[cat] }));
+  }, [items]);
+
+  const monthlyFlowChartData = [
+    { month: 'Okt', Masuk: 45, Keluar: 30 },
+    { month: 'Nov', Masuk: 60, Keluar: 40 },
+    { month: 'Des', Masuk: 80, Keluar: 65 },
+    { month: 'Jan', Masuk: 55, Keluar: 50 },
+    { month: 'Feb', Masuk: 70, Keluar: 55 },
+    { month: 'Mar', Masuk: metrics.inThisMonth + 15, Keluar: metrics.outThisMonth + 10 },
+  ];
+
+  const CHART_COLORS = ['#1e40af', '#0d9488', '#d97706', '#6366f1', '#ec4899'];
+
+  const NavItem = ({ id, label, icon: Icon, badge }) => {
+    const isActive = activeTab === id;
+    return (
+      <button
+        onClick={() => {
+          setActiveTab(id);
+          setMobileMenuOpen(false);
+        }}
+        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl font-medium text-sm transition-all duration-200 ${
+          isActive
+            ? 'bg-blue-900 text-white shadow-md'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+        }`}
+      >
+        <div className="flex items-center gap-3">
+          <Icon className={`w-5 h-5 ${isActive ? 'text-blue-300' : 'text-slate-400'}`} />
+          <span>{label}</span>
+        </div>
+        {badge !== undefined && badge > 0 && (
+          <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${isActive ? 'bg-amber-400 text-slate-900' : 'bg-rose-500 text-white'}`}>
+            {badge}
+          </span>
+        )}
+      </button>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col md:flex-row">
+      
+      {/* TOAST NOTIFICATION */}
+      {toast && (
+        <div className="fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-2xl bg-slate-900 text-white border border-slate-700 animate-bounce">
+          {toast.type === 'success' ? (
+            <CheckCircle className="w-5 h-5 text-emerald-400" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-rose-400" />
+          )}
+          <span className="text-sm font-medium">{toast.message}</span>
+        </div>
+      )}
+
+      {/* MOBILE MENU OVERLAY */}
+      {mobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
+      {/* SIDEBAR */}
+      <aside className={`fixed md:static inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col justify-between transform transition-transform duration-300 ease-in-out ${
+        mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+      }`}>
+        <div>
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-900 flex items-center justify-center text-white shadow-md">
+                <Boxes className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="font-bold text-slate-900 text-base leading-tight">INVENTO</h1>
+                <p className="text-xs text-slate-500 font-medium">Stok Barang Cloud</p>
+              </div>
+            </div>
+            <button 
+              className="md:hidden text-slate-400 hover:text-slate-600"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <nav className="p-4 space-y-1.5">
+            <NavItem id="dashboard" label="Dashboard" icon={LayoutDashboard} />
+            <NavItem id="items" label="Data Barang" icon={Package} badge={metrics.lowStockCount} />
+            <NavItem id="in-transactions" label="Barang Masuk" icon={ArrowDownLeft} />
+            <NavItem id="out-transactions" label="Barang Keluar" icon={ArrowUpRight} />
+            <NavItem id="categories" label="Kategori" icon={FolderTree} />
+            <NavItem id="reports" label="Laporan Stok" icon={FileText} />
+          </nav>
+        </div>
+
+        {/* Database Status & User Switcher */}
+        <div className="p-4 border-t border-slate-100 bg-slate-50/50 m-3 rounded-2xl space-y-3">
+          {/* Status Database Cloud */}
+          <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-white border border-slate-200 text-xs">
+            <div className="flex items-center gap-2">
+              {isCloudConnected ? (
+                <Cloud className="w-4 h-4 text-emerald-500" />
+              ) : (
+                <CloudOff className="w-4 h-4 text-amber-500" />
+              )}
+              <span className="font-semibold text-slate-700">
+                {isCloudConnected ? 'Database Cloud Active' : 'Mode Lokal'}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">Mode Peran</span>
+            </div>
+            <div className="space-y-1">
+              {Object.values(USERS).map((u) => (
+                <button
+                  key={u.role}
+                  onClick={() => {
+                    setCurrentUser(u);
+                    showToast(`Mode peran diganti: ${u.role}`);
+                  }}
+                  className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between transition-colors ${
+                    currentUser.role === u.role
+                      ? 'bg-blue-900 text-white font-semibold'
+                      : 'text-slate-600 hover:bg-slate-200/60'
+                  }`}
+                >
+                  <span>{u.role}</span>
+                  {currentUser.role === u.role && <CheckCircle className="w-3.5 h-3.5 text-blue-300" />}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* MAIN CONTENT */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="h-16 bg-white border-b border-slate-200 px-4 md:px-8 flex items-center justify-between sticky top-0 z-30">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setMobileMenuOpen(true)}
+              className="md:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-600"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900 capitalize">
+                {activeTab === 'dashboard' && 'Dashboard Inventaris'}
+                {activeTab === 'items' && 'Manajemen Data Barang'}
+                {activeTab === 'in-transactions' && 'Barang Masuk'}
+                {activeTab === 'out-transactions' && 'Barang Keluar'}
+                {activeTab === 'categories' && 'Kategori Barang'}
+                {activeTab === 'reports' && 'Laporan Ringkasan Stok'}
+              </h2>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <button
+                onClick={() => setShowNotificationMenu(!showNotificationMenu)}
+                className="relative p-2 rounded-xl hover:bg-slate-100 text-slate-600"
+              >
+                <Bell className="w-5 h-5" />
+                {notifications.length > 0 && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
+                )}
+              </button>
+
+              {showNotificationMenu && (
+                <div className="absolute right-0 mt-2 w-80 bg-white rounded-2
